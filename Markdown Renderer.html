@@ -1,0 +1,384 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Markdown + Math + Chemistry Renderer</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Source+Serif+4:opsz,wght@8..60,400;8..60,600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/marked/9.1.6/marked.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/dompurify/3.0.6/purify.min.js"></script>
+<script>
+window.MathJax = {
+  loader: { load: ['[tex]/mhchem'] },
+  tex: {
+    packages: { '[+]': ['mhchem'] },
+    inlineMath: [['$', '$'], ['\\(', '\\)']],
+    displayMath: [['$$', '$$'], ['\\[', '\\]']]
+  },
+  options: { renderActions: { addMenu: [] } }
+};
+</script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/3.2.2/es5/tex-chtml.js"></script>
+<style>
+  :root{
+    --bg:#FAFAF9; --surface:#FFFFFF; --border:#E3E1DB; --ink:#1E1F22; --ink-soft:#5B5E64;
+    --accent:#1F6F6B; --accent-soft:#E3F1EF; --err:#B4432F;
+    --mono:'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, monospace;
+    --serif:'Source Serif 4', Georgia, 'Times New Roman', serif;
+    color-scheme:light;
+  }
+  @media (prefers-color-scheme: dark){
+    :root:not([data-theme="light"]){
+      --bg:#15171A; --surface:#1B1E22; --border:#2A2E34; --ink:#E7E6E2; --ink-soft:#9FA3AA;
+      --accent:#62C9C1; --accent-soft:#1E3836; --err:#E08A77; color-scheme:dark;
+    }
+  }
+  :root[data-theme="dark"]{
+    --bg:#15171A; --surface:#1B1E22; --border:#2A2E34; --ink:#E7E6E2; --ink-soft:#9FA3AA;
+    --accent:#62C9C1; --accent-soft:#1E3836; --err:#E08A77; color-scheme:dark;
+  }
+  *{box-sizing:border-box;}
+  html,body{height:100%;margin:0;}
+  body{
+    background:var(--bg); color:var(--ink); font-family:var(--serif);
+    display:flex; flex-direction:column;
+    padding-top:env(safe-area-inset-top,0px); padding-bottom:env(safe-area-inset-bottom,0px);
+  }
+  header.topbar{
+    display:flex; align-items:flex-start; justify-content:space-between; gap:1rem;
+    padding:1.1rem 1.4rem; border-bottom:1px solid var(--border); flex-wrap:wrap;
+  }
+  header.topbar h1{margin:0; font-size:1.25rem; font-weight:600;}
+  header.topbar p{margin:.25rem 0 0; font-size:.85rem; color:var(--ink-soft); max-width:46ch;}
+  .actions{display:flex; gap:.5rem; align-items:center; flex-shrink:0;}
+  .btn{
+    font-family:var(--mono); font-size:.8rem; padding:.5rem .8rem; border-radius:6px;
+    border:1px solid var(--border); background:var(--surface); color:var(--ink);
+    cursor:pointer; white-space:nowrap;
+  }
+  .btn:hover{border-color:var(--accent); color:var(--accent);}
+  main.workspace{
+    flex:1; min-height:0; display:grid; grid-template-columns:1fr 1fr; gap:1px; background:var(--border);
+  }
+  @media (max-width:760px){
+    main.workspace{grid-template-columns:1fr; grid-template-rows:42vh 1fr;}
+  }
+  .pane{background:var(--surface); overflow:auto; min-height:0;}
+  textarea#editor{
+    width:100%; height:100%; min-height:260px; border:0; resize:none; outline:none;
+    padding:1.25rem 1.4rem; font-family:var(--mono); font-size:.92rem; line-height:1.65;
+    background:transparent; color:var(--ink);
+  }
+  .prose{padding:1.25rem 1.6rem 3rem; line-height:1.7;}
+  .prose h1,.prose h2,.prose h3{font-weight:600; line-height:1.3;}
+  .prose h1{font-size:1.6rem; margin:0 0 .6rem;}
+  .prose h2{font-size:1.3rem; margin:1.6rem 0 .5rem;}
+  .prose h3{font-size:1.1rem; margin:1.3rem 0 .4rem;}
+  .prose p{margin:.6rem 0;}
+  .prose code{font-family:var(--mono); background:var(--accent-soft); padding:.15em .4em; border-radius:4px; font-size:.88em;}
+  .prose pre{background:var(--bg); border:1px solid var(--border); border-radius:8px; padding:.9rem 1rem; overflow-x:auto;}
+  .prose pre code{background:none; padding:0;}
+  .prose blockquote{border-left:3px solid var(--accent); margin:.8rem 0; padding:.2rem 1rem; color:var(--ink-soft);}
+  .prose table{display:block; overflow-x:auto; border-collapse:collapse; width:max-content; max-width:100%; margin:.8rem 0;}
+  .prose th,.prose td{border:1px solid var(--border); padding:.4rem .7rem; text-align:left; font-size:.92rem;}
+  .prose th{background:var(--accent-soft);}
+  .prose a{color:var(--accent);}
+  .prose ul,.prose ol{padding-left:1.4rem;}
+  .prose mjx-container{overflow-x:auto; overflow-y:hidden; max-width:100%; scrollbar-width:none; -ms-overflow-style:none;}
+  .prose mjx-container::-webkit-scrollbar{display:none; width:0; height:0;}
+  .prose img{max-width:100%;}
+
+  .workspace.editor-hidden{grid-template-columns:1fr;}
+  .workspace.editor-hidden #editorPane{display:none;}
+  @media (max-width:760px){
+    .workspace.editor-hidden{grid-template-rows:1fr;}
+  }
+  /* PDF-viewer look */
+  header.topbar{background:#323639; color:#f1f1f1; border-bottom:1px solid #1f2123;}
+  header.topbar p{color:#b9bcc1;}
+  header.topbar .btn{background:#3c4043; color:#f1f1f1; border-color:#5f6368;}
+  header.topbar .btn:hover{border-color:#8ab4f8; color:#8ab4f8;}
+  #previewPane{background:#525659; padding:0; display:flex; flex-direction:column; overflow:hidden;}
+  #scroller{flex:1; min-height:0; overflow:auto; padding:1.5rem 1rem 3rem;}
+  .viewtools{display:flex; flex-wrap:wrap; align-items:center; gap:.4rem; padding:.45rem .7rem; background:#3c4043; border-bottom:1px solid #1f2123; color:#e8eaed; font-family:var(--mono); font-size:.78rem; flex-shrink:0;}
+  .tbtn{font:inherit; padding:.3rem .6rem; border-radius:5px; border:1px solid #5f6368; background:#2f3235; color:#f1f1f1; cursor:pointer;}
+  .tbtn:hover{border-color:#8ab4f8; color:#8ab4f8;}
+  .tbtn.on{background:#8ab4f8; border-color:#8ab4f8; color:#202124;}
+  .viewtools .sep{width:1px; height:1.2rem; background:#5f6368; margin:0 .3rem;}
+  .sw{width:1.5rem; height:1.5rem; padding:0; border-radius:50%; border:2px solid transparent; cursor:pointer;}
+  .sw.on{border-color:#fff; box-shadow:0 0 0 2px #8ab4f8;}
+  .sw[data-mode="yellow"]{background:#fff176;} .sw[data-mode="green"]{background:#a5d6a7;}
+  .sw[data-mode="pink"]{background:#f8bbd0;} .sw[data-mode="blue"]{background:#90caf9;}
+  mark.hl{color:inherit; padding:0; border-radius:2px;}
+  mark.hl[data-c="yellow"]{background:#fff176;} mark.hl[data-c="green"]{background:#a5d6a7;}
+  mark.hl[data-c="pink"]{background:#f8bbd0;} mark.hl[data-c="blue"]{background:#90caf9;}
+  #scroller.erase-on mark.hl{cursor:pointer; outline:1px dashed #B4432F;}
+  .prose.paper{
+    --bg:#F6F5F2; --surface:#FFFFFF; --border:#CFCDC6; --ink:#1A1A1A; --ink-soft:#555555;
+    --accent:#1F6F6B; --accent-soft:#EEF5F4;
+    background:#fff; color:var(--ink);
+    width:210mm; max-width:100%; min-height:297mm; margin:0 auto;
+    padding:20mm 18mm; border-radius:2px;
+    box-shadow:0 1px 3px rgba(0,0,0,.4), 0 6px 24px rgba(0,0,0,.35);
+  }
+  @media (prefers-color-scheme: dark){
+    :root:not([data-theme="light"]) #previewPane{background:#2b2d30;}
+  }
+  @media (max-width:760px){
+    #scroller{padding:.75rem .5rem 2rem;}
+    .prose.paper{padding:1.25rem 1.1rem; min-height:0;}
+  }
+  @media print{
+    #previewPane{padding:0; background:#fff; display:block; overflow:visible;}
+    #scroller{padding:0; overflow:visible;}
+    #viewTools{display:none !important;}
+    .prose.paper{width:auto; min-height:0; margin:0; border-radius:0; box-shadow:none; padding:16mm; zoom:1 !important; max-width:none !important;}
+    @page{margin:0;}
+    html:root:root:root{
+      --bg:#FFFFFF; --surface:#FFFFFF; --border:#CFCDC6; --ink:#000000; --ink-soft:#444444;
+      --accent:#1F6F6B; --accent-soft:#EEF5F4; color-scheme:light;
+    }
+    html,body{height:auto; background:#fff; display:block; padding:0;}
+    header.topbar, #editorPane{display:none !important;}
+    main.workspace{display:block; background:none;}
+    .pane{overflow:visible; background:#fff;}
+    .prose{padding:16mm; max-width:none; -webkit-box-decoration-break:clone; box-decoration-break:clone;}
+    mjx-assistive-mml, .MJX_Assistive_MathML{display:none !important;}
+    .prose pre{white-space:pre-wrap; word-break:break-word; overflow:visible;}
+    .prose table{display:table; width:100%; overflow:visible;}
+    .prose pre, .prose table, .prose blockquote, .prose img, .prose mjx-container[display="true"]{break-inside:avoid;}
+    .prose h1,.prose h2,.prose h3{break-after:avoid;}
+    *{-webkit-print-color-adjust:exact; print-color-adjust:exact;}
+  }
+</style>
+</head>
+<body>
+<header class="topbar">
+  <div>
+    <h1>Markdown Renderer</h1>
+  </div>
+  <div class="actions">
+    <button class="btn" id="toggleEditorBtn" type="button" aria-pressed="false">Hide editor</button>
+    <button class="btn" id="printBtn" type="button">Print / Save PDF</button>
+    <label class="btn" for="fileInput">Upload .md</label>
+    <input type="file" id="fileInput" accept=".md,.markdown,text/markdown,text/plain" hidden>
+    <button class="btn" id="clearBtn" type="button">Clear</button>
+  </div>
+</header>
+<main class="workspace" id="workspace">
+  <section class="pane" id="editorPane"><textarea id="editor" spellcheck="false"># Welcome
+
+This editor renders standard markdown plus math and chemistry.
+
+## Text and lists
+
+- Supports **bold**, *italic*, and `inline code`
+- Ordered lists, unordered lists, and nested items
+- [Links](https://example.com) and blockquotes
+
+> A blockquote looks like this.
+
+## Code block
+
+```python
+def greet(name):
+    return f"Hello, {name}!"
+```
+
+## Table
+
+| Element     | Example           |
+|-------------|--------------------|
+| Heading     | `# text`           |
+| Inline math | `$E=mc^2$`         |
+| Chemistry   | `$\ce{2H2 + O2 -> 2H2O}$` |
+| Energy (rendered) | $E = mc^2$ |
+| Water formation (rendered) | $\ce{2H2 + O2 -> 2H2O}$ |
+
+## Mathematical formulas
+
+Inline: the quadratic formula is $x = \dfrac{-b \pm \sqrt{b^2-4ac}}{2a}$.
+
+Display:
+
+$$\int_0^\infty e^{-x^2}\,dx = \frac{\sqrt{\pi}}{2}$$
+
+## Chemical equations
+
+Inline: water is $\ce{H2O}$.
+
+Display:
+
+$$\ce{2H2 + O2 ->[\Delta] 2H2O}$$
+
+$$\ce{CO2 + H2O <=> H2CO3}$$
+
+Edit this text, or upload your own .md file, to see it render live.
+</textarea></section>
+  <section class="pane" id="previewPane">
+    <div id="viewTools" class="viewtools" role="toolbar" aria-label="Viewer tools">
+      <button class="tbtn" id="zoomOutBtn" type="button" title="Zoom out">−</button>
+      <button class="tbtn" id="zoomLabel" type="button" title="Reset to 100% (Ctrl/⌘ + scroll also zooms)">100%</button>
+      <button class="tbtn" id="zoomInBtn" type="button" title="Zoom in">+</button>
+      <button class="tbtn" id="fitBtn" type="button" title="Fit page to width">Fit width</button>
+      <span class="sep"></span>
+      <span>Highlight</span>
+      <button class="sw" data-mode="yellow" type="button" title="Yellow highlighter" aria-label="Yellow highlighter"></button>
+      <button class="sw" data-mode="green" type="button" title="Green highlighter" aria-label="Green highlighter"></button>
+      <button class="sw" data-mode="pink" type="button" title="Pink highlighter" aria-label="Pink highlighter"></button>
+      <button class="sw" data-mode="blue" type="button" title="Blue highlighter" aria-label="Blue highlighter"></button>
+      <button class="tbtn" data-mode="erase" type="button" title="Click a highlight to remove it">Erase</button>
+      <button class="tbtn" id="clearHlBtn" type="button" title="Remove all highlights">Clear all</button>
+    </div>
+    <div id="scroller"><div id="preview" class="prose paper"></div></div>
+  </section>
+</main>
+<script>
+  const editor = document.getElementById('editor');
+  const preview = document.getElementById('preview');
+  let mathStore = [];
+
+  marked.setOptions({ gfm: true, breaks: false });
+
+  function protectMath(src){
+    mathStore = [];
+    const stash = (s)=>{ mathStore.push(s); return '@@MATH' + (mathStore.length - 1) + '@@'; };
+    src = src.replace(/\$\$[\s\S]+?\$\$/g, stash);
+    src = src.replace(/\\\[[\s\S]+?\\\]/g, stash);
+    src = src.replace(/\$(?!\s)((?:\\\$|[^\n$])+?)(?<!\s)\$(?!\d)/g, stash);
+    src = src.replace(/\\\([\s\S]+?\\\)/g, stash);
+    return src;
+  }
+  function restoreMath(html){
+    return html.replace(/@@MATH(\d+)@@/g, (_, i) => mathStore[+i] || '');
+  }
+
+  let renderTimer;
+  function render(){
+    clearTimeout(renderTimer);
+    renderTimer = setTimeout(()=>{
+      try{
+        const protectedSrc = protectMath(editor.value);
+        let html = marked.parse(protectedSrc);
+        html = DOMPurify.sanitize(html);
+        html = restoreMath(html);
+        preview.innerHTML = html;
+        if(window.MathJax && window.MathJax.typesetPromise){
+          if(window.MathJax.typesetClear) window.MathJax.typesetClear([preview]);
+          window.MathJax.typesetPromise([preview]).catch(()=>{});
+        }
+      }catch(e){
+        preview.innerHTML = '<p style="color:var(--err)">Render error: ' + (e.message || e) + '</p>';
+      }
+    }, 150);
+  }
+
+  editor.addEventListener('input', render);
+
+  document.getElementById('fileInput').addEventListener('change', (e)=>{
+    const f = e.target.files[0];
+    if(!f) return;
+    const reader = new FileReader();
+    reader.onload = ()=>{ editor.value = reader.result; render(); };
+    reader.readAsText(f);
+  });
+
+  document.getElementById('clearBtn').addEventListener('click', ()=>{
+    editor.value = '';
+    editor.focus();
+    render();
+  });
+
+  const workspace = document.getElementById('workspace');
+  const toggleBtn = document.getElementById('toggleEditorBtn');
+  toggleBtn.addEventListener('click', ()=>{
+    const hidden = workspace.classList.toggle('editor-hidden');
+    toggleBtn.textContent = hidden ? 'Show editor' : 'Hide editor';
+    toggleBtn.setAttribute('aria-pressed', String(hidden));
+    if(!hidden) editor.focus();
+  });
+
+  document.getElementById('printBtn').addEventListener('click', ()=>{
+    clearTimeout(renderTimer);
+    const done = (window.MathJax && window.MathJax.startup && window.MathJax.startup.promise) || Promise.resolve();
+    done.then(()=>window.print());
+  });
+
+  const scroller = document.getElementById('scroller');
+  const zoomLabel = document.getElementById('zoomLabel');
+  let zoom = 1, mode = null;
+
+  function setZoom(z){
+    zoom = Math.min(3, Math.max(0.4, Math.round(z * 100) / 100));
+    preview.style.zoom = zoom === 1 ? '' : zoom;
+    preview.style.maxWidth = zoom === 1 ? '' : 'none';
+    zoomLabel.textContent = Math.round(zoom * 100) + '%';
+  }
+  document.getElementById('zoomInBtn').addEventListener('click', ()=>setZoom(zoom + 0.1));
+  document.getElementById('zoomOutBtn').addEventListener('click', ()=>setZoom(zoom - 0.1));
+  zoomLabel.addEventListener('click', ()=>setZoom(1));
+  document.getElementById('fitBtn').addEventListener('click', ()=>{
+    const cs = getComputedStyle(scroller);
+    const avail = scroller.clientWidth - parseFloat(cs.paddingLeft) - parseFloat(cs.paddingRight);
+    setZoom(avail / (210 * 96 / 25.4) - 0.005);
+  });
+  scroller.addEventListener('wheel', (e)=>{
+    if(e.ctrlKey || e.metaKey){ e.preventDefault(); setZoom(zoom + (e.deltaY < 0 ? 0.1 : -0.1)); }
+  }, { passive: false });
+
+  // Highlighting
+  document.querySelectorAll('#viewTools [data-mode]').forEach((b)=>{
+    b.addEventListener('click', ()=>{
+      mode = (mode === b.dataset.mode) ? null : b.dataset.mode;
+      document.querySelectorAll('#viewTools [data-mode]').forEach(x=>x.classList.toggle('on', x.dataset.mode === mode));
+      scroller.classList.toggle('erase-on', mode === 'erase');
+    });
+  });
+  function unwrap(m){
+    const p = m.parentNode;
+    while(m.firstChild) p.insertBefore(m.firstChild, m);
+    p.removeChild(m);
+    p.normalize();
+  }
+  function highlightRange(range, color){
+    const c = range.commonAncestorContainer;
+    const root = c.nodeType === 3 ? c.parentNode : c;
+    const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
+    const nodes = [];
+    while(walker.nextNode()){ if(range.intersectsNode(walker.currentNode)) nodes.push(walker.currentNode); }
+    nodes.forEach((n)=>{
+      if(n.parentElement.closest('mjx-container')) return;
+      const existing = n.parentElement.closest('mark.hl');
+      if(existing){ existing.dataset.c = color; return; }
+      let start = 0, end = n.length;
+      if(n === range.startContainer) start = range.startOffset;
+      if(n === range.endContainer) end = range.endOffset;
+      if(end <= start || !n.textContent.slice(start, end).trim()) return;
+      const r = document.createRange();
+      r.setStart(n, start); r.setEnd(n, end);
+      const m = document.createElement('mark');
+      m.className = 'hl'; m.dataset.c = color;
+      r.surroundContents(m);
+    });
+  }
+  preview.addEventListener('pointerup', (e)=>{
+    if(!mode) return;
+    if(mode === 'erase'){ const m = e.target.closest('mark.hl'); if(m) unwrap(m); return; }
+    setTimeout(()=>{
+      const sel = window.getSelection();
+      if(!sel || sel.isCollapsed || !sel.rangeCount) return;
+      const r = sel.getRangeAt(0);
+      if(!preview.contains(r.commonAncestorContainer)) return;
+      highlightRange(r, mode);
+      sel.removeAllRanges();
+    }, 0);
+  });
+  document.getElementById('clearHlBtn').addEventListener('click', ()=>{
+    preview.querySelectorAll('mark.hl').forEach(unwrap);
+  });
+
+  window.addEventListener('load', render);
+</script>
+</body>
+</html>
